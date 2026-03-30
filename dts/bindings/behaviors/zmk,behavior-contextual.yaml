@@ -1,12 +1,12 @@
 description: Contextual Magic Key Behavior
 compatible: "zmk,behavior-contextual"
 
+"#binding-cells":
+  - param1
+
+
 properties:
   key-pairs:
     type: array
     required: true
     description: "Array of trigger and output keycodes. Example: <Q U>"
-  "#binding-cells":
-    type: int
-    const: 1
-    description: "Accepts 1 parameter: the fallback keycode."
