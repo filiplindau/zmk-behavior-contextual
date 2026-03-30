@@ -1,6 +1,6 @@
 description: Contextual Magic Key Behavior
 compatible: "zmk,behavior-contextual"
-include: [behavior.yaml]
+
 properties:
   key-pairs:
     type: array
