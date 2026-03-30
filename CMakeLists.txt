@@ -3,4 +3,4 @@ zephyr_library()
 
 # Add your C source file to the library. 
 # We use ../ because this CMake file is executing inside the zephyr/ subdirectory.
-zephyr_library_sources(../src/behavior_contextual.c)
+zephyr_library_sources(src/behavior_contextual.c)
