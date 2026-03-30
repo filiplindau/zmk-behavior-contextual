@@ -1,0 +1,6 @@
+name: zmk_behavior_contextual
+build:
+  cmake: .
+  settings:
+    #board_root: .
+    dts_root: ..

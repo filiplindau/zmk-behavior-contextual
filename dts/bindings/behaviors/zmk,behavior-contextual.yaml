@@ -1,0 +1,11 @@
+description: Contextual Magic Key Behavior
+compatible: "zmk,behavior-contextual"
+include: [behavior.yaml]
+properties:
+  key-pairs:
+    type: array
+    required: true
+    description: "Array of trigger and output keycodes. Example: <Q U>"
+  "#binding-cells":
+    const: 1
+    description: "Accepts 1 parameter: the fallback keycode."
