@@ -6,10 +6,12 @@
 #define DT_DRV_COMPAT zmk_behavior_contextual
 
 #include <zephyr/device.h>
+#include <drivers/behavior.h> // <-- Fixes the 'incomplete type' error
 #include <zmk/behavior.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/keycode_state_changed.h>
 #include <zmk/hid.h>
+#include <dt-bindings/zmk/hid_usage_pages.h>
 
 static uint32_t last_pressed_keycode = 0;
 
@@ -18,12 +20,15 @@ int contextual_tracker_listener(const zmk_event_t *eh) {
     const struct zmk_keycode_state_changed *ev = as_zmk_keycode_state_changed(eh);
     
     if (ev && ev->state) { 
-        // Optional: Ignore modifiers (0xE0 to 0xE7) so "Shift + Q" still registers 'Q' as the last key
-        bool is_mod = (ev->usage_page == 0x07 && ev->keycode >= 0xE0 && ev->keycode <= 0xE7);
-        
-        if (!is_mod) {
-            // Re-encode to match the 32-bit values stored in the device tree
-            last_pressed_keycode = ZMK_HID_USAGE(ev->usage_page, ev->keycode);
+        // We only care about standard keypresses (page 0x07 is HID_USAGE_KEY)
+        if (ev->usage_page == HID_USAGE_KEY) {
+            // Ignore modifiers (0xE0 to 0xE7) so "Shift + Q" still registers 'Q' as the last key
+            bool is_mod = (ev->keycode >= 0xE0 && ev->keycode <= 0xE7);
+            
+            if (!is_mod) {
+                // Re-encode into the 32-bit format so it matches your Devicetree map
+                last_pressed_keycode = ZMK_HID_USAGE(ev->usage_page, ev->keycode);
+            }
         }
     }
     return ZMK_EV_EVENT_BUBBLE;
@@ -55,15 +60,8 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
         }
     }
 
-    // Emit the resulting keypress to the OS
-    raise_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = ZMK_HID_USAGE_PAGE(output_keycode),
-        .keycode = ZMK_HID_USAGE_ID(output_keycode),
-        .implicit_modifiers = ZMK_HID_MODS(output_keycode),
-        .state = true,
-        .timestamp = k_uptime_get()
-    });
-
+    // Modern ZMK way to emit a keypress
+    raise_zmk_keycode_state_changed_from_encoded(output_keycode, true, event.timestamp);
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
@@ -81,15 +79,8 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
         }
     }
 
-    // Release the key
-    raise_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = ZMK_HID_USAGE_PAGE(output_keycode),
-        .keycode = ZMK_HID_USAGE_ID(output_keycode),
-        .implicit_modifiers = ZMK_HID_MODS(output_keycode),
-        .state = false,
-        .timestamp = k_uptime_get()
-    });
-
+    // Modern ZMK way to release a key
+    raise_zmk_keycode_state_changed_from_encoded(output_keycode, false, event.timestamp);
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
