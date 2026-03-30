@@ -14,6 +14,8 @@
 #include <dt-bindings/zmk/hid_usage_pages.h>
 
 static uint32_t last_pressed_keycode = 0;
+// NEW: State tracker to remember what to release
+static uint32_t currently_pressed_contextual_key = 0; 
 
 // GUARD: Only compile the listener on the Central half that processes the keymap
 #if IS_ENABLED(CONFIG_ZMK_KEYMAP)
@@ -22,10 +24,16 @@ int contextual_tracker_listener(const zmk_event_t *eh) {
     const struct zmk_keycode_state_changed *ev = as_zmk_keycode_state_changed(eh);
     
     if (ev && ev->state) { 
-        if (ev->usage_page == HID_USAGE_KEY) {
-            bool is_mod = (ev->keycode >= 0xE0 && ev->keycode <= 0xE7);
+        // ZMK sometimes sends page 0 if keycode is fully encoded. We safely handle both.
+        uint32_t page = ev->usage_page ? ev->usage_page : HID_USAGE_KEY;
+        uint32_t id = ev->keycode & 0xFFFF; // Extract just the physical ID
+
+        if (page == HID_USAGE_KEY) {
+            // Ignore modifiers so "Shift + Q" still registers 'Q'
+            bool is_mod = (id >= 0xE0 && id <= 0xE7);
             if (!is_mod) {
-                last_pressed_keycode = ZMK_HID_USAGE(ev->usage_page, ev->keycode);
+                // Reconstruct standard 32-bit Devicetree format (Page + ID)
+                last_pressed_keycode = (page << 16) | id;
             }
         }
     }
@@ -58,6 +66,9 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
         }
     }
 
+    // SAVE the keycode we decided to output so we release the correct one!
+    currently_pressed_contextual_key = output_keycode;
+
     struct zmk_behavior_binding child = {
         .behavior_dev = "key_press",
         .param1 = output_keycode,
@@ -73,13 +84,12 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
     const struct device *dev = zmk_behavior_get_binding(binding->behavior_dev);
     const struct behavior_contextual_config *cfg = dev->config;
 
-    uint32_t output_keycode = binding->param1;
-
-    for (int i = 0; i < cfg->pairs_len; i += 2) {
-        if (cfg->pairs[i] == last_pressed_keycode) {
-            output_keycode = cfg->pairs[i+1];
-            break;
-        }
+    // Retrieve the exact keycode we pressed
+    uint32_t output_keycode = currently_pressed_contextual_key;
+    
+    // Safety fallback just in case
+    if (output_keycode == 0) {
+        output_keycode = binding->param1;
     }
 
     struct zmk_behavior_binding child = {
@@ -89,6 +99,8 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
     };
     
     zmk_behavior_invoke_binding(&child, event, false);
+    // Reset state
+    currently_pressed_contextual_key = 0;
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
