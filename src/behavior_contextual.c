@@ -6,7 +6,7 @@
 #define DT_DRV_COMPAT zmk_behavior_contextual
 
 #include <zephyr/device.h>
-#include <drivers/behavior.h> // <-- Fixes the 'incomplete type' error
+#include <drivers/behavior.h>
 #include <zmk/behavior.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/keycode_state_changed.h>
@@ -15,18 +15,16 @@
 
 static uint32_t last_pressed_keycode = 0;
 
-// Listen to the global keycode stream to track the previous key
+// GUARD: Only compile the listener on the Central half that processes the keymap
+#if IS_ENABLED(CONFIG_ZMK_KEYMAP)
+
 int contextual_tracker_listener(const zmk_event_t *eh) {
     const struct zmk_keycode_state_changed *ev = as_zmk_keycode_state_changed(eh);
     
     if (ev && ev->state) { 
-        // We only care about standard keypresses (page 0x07 is HID_USAGE_KEY)
         if (ev->usage_page == HID_USAGE_KEY) {
-            // Ignore modifiers (0xE0 to 0xE7) so "Shift + Q" still registers 'Q' as the last key
             bool is_mod = (ev->keycode >= 0xE0 && ev->keycode <= 0xE7);
-            
             if (!is_mod) {
-                // Re-encode into the 32-bit format so it matches your Devicetree map
                 last_pressed_keycode = ZMK_HID_USAGE(ev->usage_page, ev->keycode);
             }
         }
@@ -37,7 +35,8 @@ int contextual_tracker_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(contextual_tracker, contextual_tracker_listener);
 ZMK_SUBSCRIPTION(contextual_tracker, zmk_keycode_state_changed);
 
-// Behavior implementation
+#endif // End of GUARD
+
 struct behavior_contextual_config {
     uint32_t *pairs;
     int pairs_len;
@@ -50,9 +49,8 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
     const struct device *dev = zmk_behavior_get_binding(binding->behavior_dev);
     const struct behavior_contextual_config *cfg = dev->config;
 
-    uint32_t output_keycode = binding->param1; // This is your fallback key
+    uint32_t output_keycode = binding->param1;
 
-    // Scan the config map for a match: pairs of [trigger, output]
     for (int i = 0; i < cfg->pairs_len; i += 2) {
         if (cfg->pairs[i] == last_pressed_keycode) {
             output_keycode = cfg->pairs[i+1];
@@ -60,8 +58,13 @@ static int on_keymap_binding_pressed(struct zmk_behavior_binding *binding,
         }
     }
 
-    // Modern ZMK way to emit a keypress
-    raise_zmk_keycode_state_changed_from_encoded(output_keycode, true, event.timestamp);
+    struct zmk_behavior_binding child = {
+        .behavior_dev = "key_press",
+        .param1 = output_keycode,
+        .param2 = 0
+    };
+    
+    zmk_behavior_invoke_binding(&child, event, true);
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
@@ -70,7 +73,7 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
     const struct device *dev = zmk_behavior_get_binding(binding->behavior_dev);
     const struct behavior_contextual_config *cfg = dev->config;
 
-    uint32_t output_keycode = binding->param1; // Fallback
+    uint32_t output_keycode = binding->param1;
 
     for (int i = 0; i < cfg->pairs_len; i += 2) {
         if (cfg->pairs[i] == last_pressed_keycode) {
@@ -79,8 +82,13 @@ static int on_keymap_binding_released(struct zmk_behavior_binding *binding,
         }
     }
 
-    // Modern ZMK way to release a key
-    raise_zmk_keycode_state_changed_from_encoded(output_keycode, false, event.timestamp);
+    struct zmk_behavior_binding child = {
+        .behavior_dev = "key_press",
+        .param1 = output_keycode,
+        .param2 = 0
+    };
+    
+    zmk_behavior_invoke_binding(&child, event, false);
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
