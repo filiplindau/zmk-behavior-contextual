@@ -1,9 +1,6 @@
 description: Contextual Magic Key Behavior
 compatible: "zmk,behavior-contextual"
-
-"#binding-cells":
-  - param1
-
+include: one_param.yaml
 
 properties:
   key-pairs:
